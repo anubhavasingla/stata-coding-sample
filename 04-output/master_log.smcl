@@ -1,0 +1,1540 @@
+{smcl}
+{com}{sf}{ul off}{txt}{.-}
+      name:  {res}master
+       {txt}log:  {res}/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/master_log.smcl
+  {txt}log type:  {res}smcl
+ {txt}opened on:  {res} 8 Apr 2026, 18:50:53
+{txt}
+{com}. 
+. * ── Run analysis pipeline ─────────────────────────────────────────────────────
+. do "${c -(}dofiles{c )-}01_data_preparation.do"
+{txt}
+{com}. /*==============================================================================
+>   File:       01_data_preparation.do
+>   Purpose:    Part 1, Sections 1–5: Identify units of observation, construct
+>               household size, impute missing asset values and compute asset 
+>                           aggregates.
+>   Inputs:     ${c -(}rawdata{c )-}demographics.dta, ${c -(}rawdata{c )-}assets.dta
+>   Outputs:    ${c -(}tempdata{c )-}demographics_clean.dta
+>               ${c -(}tempdata{c )-}assets_hh_wave.dta
+> ==============================================================================*/
+. 
+. 
+. /*──────────────────────────────────────────────────────────────────────────────
+>   1. UNIT OF OBSERVATION AND UNIQUE IDENTIFIERS
+> ──────────────────────────────────────────────────────────────────────────────*/
+. 
+. * [Demographics] 
+. * Unit: individual household member × wave.
+. * Unique ID: (hhid, hhmid, wave).
+. 
+. use "${c -(}rawdata{c )-}demographics.dta", clear
+{txt}(bb01b2_roster)
+
+{com}. 
+. isid hhid hhmid wave
+{txt}
+{com}. //Confirmed if each row is one household member observed in one wave. 
+. 
+. * [Assets] 
+. * Unit: individual asset record within a household × wave.
+. * The dataset contains three asset categories (Asset_Type = 1 animals, 
+. * 2 tools, 3 durable goods). Within each category an InstanceNumber
+. * indexes separate items.
+. * Unique ID: (hhid, wave, Asset_Type, InstanceNumber).
+. 
+. use "${c -(}rawdata{c )-}assets.dta", clear
+{txt}
+{com}. 
+. * NOTE: hhid is stored as string in assets.dta (with leading zeros) but as
+. * numeric in demographics.dta and depression.dta. Destring here so that
+. * merges work correctly downstream.
+. destring hhid, replace force
+{txt}hhid: all characters numeric; {res}replaced {txt}as {res}long
+{txt}
+{com}. format hhid %12.0f
+{txt}
+{com}. 
+. isid hhid wave Asset_Type InstanceNumber
+{txt}
+{com}. // Confirmef if each row is one asset instance within a household-wave.
+. 
+. * [Depression] 
+. * Unit: individual (head or spouse) × wave.
+. * Unique ID: (hhid, hhmid, wave).
+. 
+. use "${c -(}rawdata{c )-}depression.dta", clear
+{txt}
+{com}. 
+. isid hhid hhmid wave
+{txt}
+{com}. // Confirmed if each row is one individual observed in one wave. 
+. 
+. 
+. /*──────────────────────────────────────────────────────────────────────────────
+>   2. CONSTRUCTING HOUSEHOLD SIZE (DEMOGRAPHICS)
+> ──────────────────────────────────────────────────────────────────────────────
+>   
+>   What did I do - counted the number of members rostered in Wave 1 for 
+>   each household. Per instructions, I hold this value fixed for Wave 2 so that 
+>   household size is a pre-treatment baseline characteristic and is not itself 
+>   affected by the intervention.
+> ──────────────────────────────────────────────────────────────────────────────*/
+. 
+. use "${c -(}rawdata{c )-}demographics.dta", clear
+{txt}(bb01b2_roster)
+
+{com}. 
+. * Counting members per household in Wave 1 only
+. bysort hhid: egen hh_size = total(wave == 1)
+{txt}
+{com}. label var hh_size "Household size (count of Wave 1 roster members)"
+{txt}
+{com}. 
+. save "${c -(}tempdata{c )-}demographics_clean.dta", replace
+{txt}{p 0 4 2}
+file {bf}
+/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/03-tempdata/demographics_clean.dta{rm}
+saved
+{p_end}
+
+{com}. 
+. 
+. /*──────────────────────────────────────────────────────────────────────────────
+>   3. IMPUTING MISSING CURRENT VALUES (ASSETS)
+> ──────────────────────────────────────────────────────────────────────────────
+>   
+>   currentvalue reports the value of a single unit of each asset. It is
+>   reported to be missing. 
+>   
+>   What did I do - I will impute using the median of currentvalue for each asset 
+>   *iwtem* — i.e., "chickens", "cutlass", etc.
+> 
+>   Asset items are identified by the combination of Asset_Type and the
+>   relevant code variable within that type:
+>       Asset_Type 1 (Animals):       animaltype
+>       Asset_Type 2 (Tools):         toolcode
+>       Asset_Type 3 (Durable Goods): durablegood_code
+> 
+>   I construct a single consolidated item code (`item_code`) so that the
+>   median imputation is done at the correct item level across all three
+>   asset categories.
+> ──────────────────────────────────────────────────────────────────────────────*/
+. 
+. use "${c -(}rawdata{c )-}assets.dta", clear
+{txt}
+{com}. 
+. destring hhid, replace force
+{txt}hhid: all characters numeric; {res}replaced {txt}as {res}long
+{txt}
+{com}. format hhid %12.0f
+{txt}
+{com}. 
+. * Dropped observations with missing asset type
+. count if mi(Asset_Type)
+  {res}0
+{txt}
+{com}. drop if mi(Asset_Type)
+{txt}(0 observations deleted)
+
+{com}. 
+. * [Creating consolidated item code]
+. * Each Asset_Type has its own code variable. We create a unified item
+. * identifier by combining Asset_Type and the item-specific code.
+. * This ensures, e.g., code "1" in animals ≠ code "1" in tools.
+. 
+. gen item_code = .
+{txt}(164,693 missing values generated)
+
+{com}. replace item_code = animaltype     if Asset_Type == 1
+{txt}(10,766 real changes made)
+
+{com}. replace item_code = toolcode       if Asset_Type == 2
+{txt}(35,776 real changes made)
+
+{com}. replace item_code = durablegood_code if Asset_Type == 3
+{txt}(118,151 real changes made)
+
+{com}. 
+. label var item_code "Consolidated asset item code (within Asset_Type)"
+{txt}
+{com}. 
+. * Imputing missing currentvalue using item-level median
+. * Step 1: Compute median by specific item
+. bysort Asset_Type item_code: egen med_value = median(currentvalue)
+{txt}
+{com}. replace currentvalue = med_value if mi(currentvalue)
+{txt}(90,811 real changes made)
+
+{com}. 
+. * Step 2: If still missing (item has no observed prices), fall back to
+. *         median by Asset_Type overall
+. bysort Asset_Type: egen med_value_type = median(currentvalue)
+{txt}
+{com}. replace currentvalue = med_value_type if mi(currentvalue)
+{txt}(0 real changes made)
+
+{com}. 
+. * Report remaining missingness
+. count if mi(currentvalue)
+  {res}0
+{txt}
+{com}. /* Any remaining missing values are items with zero observed prices
+>    across the entire asset category (very rare). */
+. 
+. drop med_value med_value_type
+{txt}
+{com}. 
+. 
+. /*──────────────────────────────────────────────────────────────────────────────
+>   4. COMPUTED OBSERVATION-LEVEL TOTAL ASSET VALUE
+> ──────────────────────────────────────────────────────────────────────────────*/
+. 
+. gen asset_value = quantity * currentvalue
+{txt}
+{com}. label var asset_value "Total value of this asset observation (qty × unit value)"
+{txt}
+{com}. 
+. * Flagging observations where value could not be computed
+. count if mi(asset_value) & !mi(quantity)
+  {res}0
+{txt}
+{com}. 
+. 
+. /*──────────────────────────────────────────────────────────────────────────────
+>   5. AGGREGATE TO HOUSEHOLD-WAVE LEVEL
+> ──────────────────────────────────────────────────────────────────────────────
+>   
+>   Produce a dataset with one row per household × wave, containing:
+>     - total_val_animals
+>     - total_val_tools
+>     - total_val_durables
+>     - total_asset_value  (sum of the three)
+> ──────────────────────────────────────────────────────────────────────────────*/
+. 
+. * Collapsing by household-wave-asset type
+. collapse (sum) asset_value, by(hhid wave Asset_Type)
+{res}{txt}
+{com}. 
+. * Reshaping so each asset type becomes its own column
+. reshape wide asset_value, i(hhid wave) j(Asset_Type)
+{txt}(j = 1 2 3)
+
+Data{col 36}Long{col 43}->{col 48}Wide
+{hline 77}
+Number of observations     {res}      21,362   {txt}->   {res}9,357       
+{txt}Number of variables        {res}           4   {txt}->   {res}5           
+{txt}j variable (3 values)        {res}Asset_Type   {txt}->   (dropped)
+xij variables:
+                            {res}asset_value   {txt}->   {res}asset_value1 asset_value2 asset_value3
+{txt}{hline 77}
+
+{com}. 
+. rename asset_value1 total_val_animals
+{res}{txt}
+{com}. rename asset_value2 total_val_tools
+{res}{txt}
+{com}. rename asset_value3 total_val_durables
+{res}{txt}
+{com}. 
+. label var total_val_animals  "Total value of animals"
+{txt}
+{com}. label var total_val_tools    "Total value of tools"
+{txt}
+{com}. label var total_val_durables "Total value of durable goods"
+{txt}
+{com}. 
+. * Replaced missing with 0 (household owns none of that category)
+. foreach v of varlist total_val_animals total_val_tools total_val_durables {c -(}
+{txt}  2{com}.     replace `v' = 0 if mi(`v')
+{txt}  3{com}. {c )-}
+{txt}(5,205 real changes made)
+(1,495 real changes made)
+(9 real changes made)
+
+{com}. 
+. * Total across all categories
+. gen total_asset_value = total_val_animals + total_val_tools + total_val_durables
+{txt}
+{com}. label var total_asset_value "Total household asset value (all categories)"
+{txt}
+{com}. 
+. 
+. save "${c -(}tempdata{c )-}assets_hh_wave.dta", replace
+{txt}{p 0 4 2}
+file {bf}
+/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/03-tempdata/assets_hh_wave.dta{rm}
+saved
+{p_end}
+
+{com}. 
+{txt}end of do-file
+
+{com}. do "${c -(}dofiles{c )-}02_kessler_construction.do"
+{txt}
+{com}. /*==============================================================================
+>   File:       02_kessler_construction.do
+>   Purpose:    Part 1, sections 6–7: Construct K10 score and categories; tabulate
+>               distribution by wave.
+>   Inputs:     ${c -(}rawdata{c )-}depression.dta
+>   Outputs:    ${c -(}tempdata{c )-}depression_clean.dta
+>   
+>   NOTES ON MISSING-VALUE HANDLING
+>   ───────────────────────────────
+>   The K10 is the simple sum of 10 items, each scored 1–5, yielding a range
+>   of 10–50. Two decisions arise when items are missing:
+>   
+>   (a) Fully missing respondents (all 10 items missing): these individuals
+>       did not complete the module. They are dropped. 
+>   
+>   (b) Partially missing respondents (1–9 items answered): the exam 
+>       instructions note that "sometimes variables in the Kessler section
+>       are missing, which can complicate construction of a score."
+>       
+>       I treat the K10 as missing if ANY of the 10 items is missing. This
+>       conservative approach avoids understating distress due to item
+>       non-response. An alternative would be pro-rating (scaling the sum
+>       of answered items), but this introduces measurement noise and could
+>       bias results if missingness is non-random. Given that <2% of 
+>       respondents have partial missingness, the cost of dropping them is
+>       small relative to the risk of measurement error.
+> ==============================================================================*/
+. 
+. use "${c -(}rawdata{c )-}depression.dta", clear
+{txt}
+{com}. 
+. format hhid %12.0f
+{txt}
+{com}. 
+. * Inspect the 10 K10 items 
+. local k10_items tired nervous sonervous hopeless restless sorestless ///
+>                depressed everythingeffort nothingcheerup worthless
+{txt}
+{com}. 
+. foreach var of local k10_items {c -(}
+{txt}  2{com}.     tab `var', mi
+{txt}  3{com}. {c )-}
+
+ {txt}A1. About how often {c |}
+  did you feel tired {c |}
+     out for no good {c |}
+             reason? {c |}      Freq.     Percent        Cum.
+{hline 21}{c +}{hline 35}
+    None of the time {c |}{res}      4,719       34.09       34.09
+{txt}A little of the time {c |}{res}      3,241       23.41       57.51
+{txt}    Some of the time {c |}{res}      3,931       28.40       85.91
+{txt}    Most of the time {c |}{res}      1,587       11.47       97.37
+{txt}     All of the time {c |}{res}        333        2.41       99.78
+{txt}                   . {c |}{res}         31        0.22      100.00
+{txt}{hline 21}{c +}{hline 35}
+               Total {c |}{res}     13,842      100.00
+
+ {txt}A2. About how often {c |}
+        did you feel {c |}
+            nervous? {c |}      Freq.     Percent        Cum.
+{hline 21}{c +}{hline 35}
+    None of the time {c |}{res}      6,843       49.44       49.44
+{txt}A little of the time {c |}{res}      3,419       24.70       74.14
+{txt}    Some of the time {c |}{res}      2,637       19.05       93.19
+{txt}    Most of the time {c |}{res}        785        5.67       98.86
+{txt}     All of the time {c |}{res}        124        0.90       99.75
+{txt}                   . {c |}{res}         34        0.25      100.00
+{txt}{hline 21}{c +}{hline 35}
+               Total {c |}{res}     13,842      100.00
+
+ {txt}A3. About how often {c |}
+     did you feel so {c |}
+nervous that nothing {c |}
+could calm you down? {c |}      Freq.     Percent        Cum.
+{hline 21}{c +}{hline 35}
+    None of the time {c |}{res}      9,839       71.08       71.08
+{txt}A little of the time {c |}{res}      2,396       17.31       88.39
+{txt}    Some of the time {c |}{res}      1,173        8.47       96.86
+{txt}    Most of the time {c |}{res}        326        2.36       99.22
+{txt}     All of the time {c |}{res}         68        0.49       99.71
+{txt}                   . {c |}{res}         40        0.29      100.00
+{txt}{hline 21}{c +}{hline 35}
+               Total {c |}{res}     13,842      100.00
+
+ {txt}A4. About how often {c |}
+        did you feel {c |}
+           hopeless? {c |}      Freq.     Percent        Cum.
+{hline 21}{c +}{hline 35}
+    None of the time {c |}{res}      8,517       61.53       61.53
+{txt}A little of the time {c |}{res}      2,271       16.41       77.94
+{txt}    Some of the time {c |}{res}      2,001       14.46       92.39
+{txt}    Most of the time {c |}{res}        811        5.86       98.25
+{txt}     All of the time {c |}{res}        208        1.50       99.75
+{txt}                   . {c |}{res}         34        0.25      100.00
+{txt}{hline 21}{c +}{hline 35}
+               Total {c |}{res}     13,842      100.00
+
+ {txt}A5. About how often {c |}
+        did you feel {c |}
+restless or fidgety? {c |}      Freq.     Percent        Cum.
+{hline 21}{c +}{hline 35}
+    None of the time {c |}{res}      6,933       50.09       50.09
+{txt}A little of the time {c |}{res}      3,324       24.01       74.10
+{txt}    Some of the time {c |}{res}      2,694       19.46       93.56
+{txt}    Most of the time {c |}{res}        677        4.89       98.45
+{txt}     All of the time {c |}{res}        126        0.91       99.36
+{txt}                   . {c |}{res}         88        0.64      100.00
+{txt}{hline 21}{c +}{hline 35}
+               Total {c |}{res}     13,842      100.00
+
+ {txt}A6. About how often {c |}
+     did you feel so {c |}
+  restless you could {c |}
+      not sit still? {c |}      Freq.     Percent        Cum.
+{hline 21}{c +}{hline 35}
+    None of the time {c |}{res}      9,361       67.63       67.63
+{txt}A little of the time {c |}{res}      2,370       17.12       84.75
+{txt}    Some of the time {c |}{res}      1,548       11.18       95.93
+{txt}    Most of the time {c |}{res}        435        3.14       99.08
+{txt}     All of the time {c |}{res}         80        0.58       99.65
+{txt}                   . {c |}{res}         48        0.35      100.00
+{txt}{hline 21}{c +}{hline 35}
+               Total {c |}{res}     13,842      100.00
+
+ {txt}A7. About how often {c |}
+        did you feel {c |}
+          depressed? {c |}      Freq.     Percent        Cum.
+{hline 21}{c +}{hline 35}
+    None of the time {c |}{res}      6,290       45.44       45.44
+{txt}A little of the time {c |}{res}      3,367       24.32       69.77
+{txt}    Some of the time {c |}{res}      3,079       22.24       92.01
+{txt}    Most of the time {c |}{res}        915        6.61       98.62
+{txt}     All of the time {c |}{res}        146        1.05       99.67
+{txt}                   . {c |}{res}         45        0.33      100.00
+{txt}{hline 21}{c +}{hline 35}
+               Total {c |}{res}     13,842      100.00
+
+ {txt}A8. About how often {c |}
+   did you feel that {c |}
+   everything was an {c |}
+             effort? {c |}      Freq.     Percent        Cum.
+{hline 21}{c +}{hline 35}
+    None of the time {c |}{res}      3,015       21.78       21.78
+{txt}A little of the time {c |}{res}      1,835       13.26       35.04
+{txt}    Some of the time {c |}{res}      2,462       17.79       52.82
+{txt}    Most of the time {c |}{res}      2,937       21.22       74.04
+{txt}     All of the time {c |}{res}      3,533       25.52       99.57
+{txt}                   . {c |}{res}         60        0.43      100.00
+{txt}{hline 21}{c +}{hline 35}
+               Total {c |}{res}     13,842      100.00
+
+ {txt}A9. About how often {c |}
+ did you feel so sad {c |}
+  that nothing could {c |}
+       cheer you up? {c |}      Freq.     Percent        Cum.
+{hline 21}{c +}{hline 35}
+    None of the time {c |}{res}      7,734       55.87       55.87
+{txt}A little of the time {c |}{res}      3,048       22.02       77.89
+{txt}    Some of the time {c |}{res}      2,165       15.64       93.53
+{txt}    Most of the time {c |}{res}        678        4.90       98.43
+{txt}     All of the time {c |}{res}        123        0.89       99.32
+{txt}                   . {c |}{res}         94        0.68      100.00
+{txt}{hline 21}{c +}{hline 35}
+               Total {c |}{res}     13,842      100.00
+
+{txt}A10. About how often {c |}
+        did you feel {c |}
+          worthless? {c |}      Freq.     Percent        Cum.
+{hline 21}{c +}{hline 35}
+    None of the time {c |}{res}      9,229       66.67       66.67
+{txt}A little of the time {c |}{res}      2,115       15.28       81.95
+{txt}    Some of the time {c |}{res}      1,666       12.04       93.99
+{txt}    Most of the time {c |}{res}        598        4.32       98.31
+{txt}     All of the time {c |}{res}        146        1.05       99.36
+{txt}                   . {c |}{res}         88        0.64      100.00
+{txt}{hline 21}{c +}{hline 35}
+               Total {c |}{res}     13,842      100.00
+{txt}
+{com}. 
+. * Count non-missing items per respondent 
+. egen k10_nonmiss = rownonmiss(`k10_items')
+{txt}
+{com}. tab k10_nonmiss, mi
+
+{txt}k10_nonmiss {c |}      Freq.     Percent        Cum.
+{hline 12}{c +}{hline 35}
+          0 {c |}{res}         22        0.16        0.16
+{txt}          1 {c |}{res}          1        0.01        0.17
+{txt}          2 {c |}{res}          1        0.01        0.17
+{txt}          5 {c |}{res}          1        0.01        0.18
+{txt}          6 {c |}{res}          1        0.01        0.19
+{txt}          7 {c |}{res}          2        0.01        0.20
+{txt}          8 {c |}{res}         25        0.18        0.38
+{txt}          9 {c |}{res}        260        1.88        2.26
+{txt}         10 {c |}{res}     13,529       97.74      100.00
+{txt}{hline 12}{c +}{hline 35}
+      Total {c |}{res}     13,842      100.00
+{txt}
+{com}. 
+. * Drop fully missing respondents (no information) 
+. drop if k10_nonmiss == 0
+{txt}(22 observations deleted)
+
+{com}. 
+. * [Construct K10 score] 
+. *    Sum all 10 items. If any item is missing, the sum is missing (Stata
+. *    default for gen/egen with missing values uses rowtotal with the
+. *    missing option turned off). We use an explicit check.
+. 
+. egen k10_raw = rowtotal(`k10_items'), missing
+{txt}
+{com}. /*  rowtotal(..., missing) returns missing if ALL items are missing.
+>     But we want missing if ANY item is missing. So: */
+. 
+. gen kessler_score = k10_raw if k10_nonmiss == 10
+{txt}(291 missing values generated)
+
+{com}. label var kessler_score "Kessler-10 score (sum of 10 items, 10–50)"
+{txt}
+{com}. 
+. * Report how many observations have partial missingness
+. count if k10_nonmiss > 0 & k10_nonmiss < 10
+  {res}291
+{txt}
+{com}. /* These observations are retained in the dataset but will have
+>    kessler_score == . and will be excluded from K10-based analyses. */
+. 
+. drop k10_raw k10_nonmiss
+{txt}
+{com}. 
+. 
+. * Construct Kessler categories 
+. *    Standard thresholds from the K10 manual:
+. *      10–19: No significant depression
+. *      20–24: Mild depression
+. *      25–29: Moderate depression
+. *      30–50: Severe depression
+. 
+. gen kessler_cat = .
+{txt}(13,820 missing values generated)
+
+{com}. replace kessler_cat = 1 if inrange(kessler_score, 10, 19)
+{txt}(8,011 real changes made)
+
+{com}. replace kessler_cat = 2 if inrange(kessler_score, 20, 24)
+{txt}(3,109 real changes made)
+
+{com}. replace kessler_cat = 3 if inrange(kessler_score, 25, 29)
+{txt}(1,584 real changes made)
+
+{com}. replace kessler_cat = 4 if inrange(kessler_score, 30, 50)
+{txt}(825 real changes made)
+
+{com}. 
+. label define kcat_lbl ///
+>     1 "No significant depression (10–19)" ///
+>     2 "Mild depression (20–24)" ///
+>     3 "Moderate depression (25–29)" ///
+>     4 "Severe depression (30–50)"
+{txt}
+{com}. 
+. label values kessler_cat kcat_lbl
+{txt}
+{com}. label var kessler_cat "Kessler depression category"
+{txt}
+{com}. 
+. 
+. 
+. /*──────────────────────────────────────────────────────────────────────────────
+>   7. DISTRIBUTION ACROSS KESSLER CATEGORIES BY WAVE
+> ──────────────────────────────────────────────────────────────────────────────*/
+. 
+. * Tabulate (row percentages within each wave)
+. tab wave kessler_cat if !mi(kessler_cat), row nofreq
+
+           {txt}{c |}  Kessler depression
+    Survey {c |}       category
+      wave {c |} No signif  Mild depr {c |}     Total
+{hline 11}{c +}{hline 22}{c +}{hline 10}
+         1 {c |}{res}     50.38      25.76 {txt}{c |}{res}    100.00 
+{txt}         2 {c |}{res}     69.09      19.87 {txt}{c |}{res}    100.00 
+{txt}{hline 11}{c +}{hline 22}{c +}{hline 10}
+     Total {c |}{res}     59.21      22.98 {txt}{c |}{res}    100.00 
+
+
+           {txt}{c |}  Kessler depression
+    Survey {c |}       category
+      wave {c |} Moderate   Severe de {c |}     Total
+{hline 11}{c +}{hline 22}{c +}{hline 10}
+         1 {c |}{res}     14.66       9.20 {txt}{c |}{res}    100.00 
+{txt}         2 {c |}{res}      8.41       2.63 {txt}{c |}{res}    100.00 
+{txt}{hline 11}{c +}{hline 22}{c +}{hline 10}
+     Total {c |}{res}     11.71       6.10 {txt}{c |}{res}    100.00 
+{txt}
+{com}. 
+. * Exporting a clean version for the write-up
+. estpost tab wave kessler_cat if !mi(kessler_cat)
+
+{res}kessler_cat {txt} {c |}{space 44}
+{space 0}{space 0}{ralign 12:wave}{space 1}{c |}{space 1}{ralign 9:e(b)}{space 1}{space 1}{ralign 9:e(pct)}{space 1}{space 1}{ralign 9:e(colpct)}{space 1}
+{space 0}{hline 13}{c   +}{hline 11}{hline 11}{hline 11}
+{space 0}{res:{lalign 13:1}}{c |}{space 11}{space 11}{space 11}
+{space 0}{space 0}{ralign 12:1}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     3599}}}{space 1}{space 1}{ralign 9:{res:{sf: 26.60211}}}{space 1}{space 1}{ralign 9:{res:{sf: 44.92573}}}{space 1}
+{space 0}{space 0}{ralign 12:2}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     4412}}}{space 1}{space 1}{ralign 9:{res:{sf: 32.61143}}}{space 1}{space 1}{ralign 9:{res:{sf: 55.07427}}}{space 1}
+{space 0}{space 0}{ralign 12:Total}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     8011}}}{space 1}{space 1}{ralign 9:{res:{sf: 59.21354}}}{space 1}{space 1}{ralign 9:{res:{sf:      100}}}{space 1}
+{space 0}{hline 13}{c   +}{hline 11}{hline 11}{hline 11}
+{space 0}{res:{lalign 13:2}}{c |}{space 11}{space 11}{space 11}
+{space 0}{space 0}{ralign 12:1}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     1840}}}{space 1}{space 1}{ralign 9:{res:{sf: 13.60041}}}{space 1}{space 1}{ralign 9:{res:{sf: 59.18302}}}{space 1}
+{space 0}{space 0}{ralign 12:2}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     1269}}}{space 1}{space 1}{ralign 9:{res:{sf: 9.379851}}}{space 1}{space 1}{ralign 9:{res:{sf: 40.81698}}}{space 1}
+{space 0}{space 0}{ralign 12:Total}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     3109}}}{space 1}{space 1}{ralign 9:{res:{sf: 22.98026}}}{space 1}{space 1}{ralign 9:{res:{sf:      100}}}{space 1}
+{space 0}{hline 13}{c   +}{hline 11}{hline 11}{hline 11}
+{space 0}{res:{lalign 13:3}}{c |}{space 11}{space 11}{space 11}
+{space 0}{space 0}{ralign 12:1}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     1047}}}{space 1}{space 1}{ralign 9:{res:{sf: 7.738931}}}{space 1}{space 1}{ralign 9:{res:{sf: 66.09848}}}{space 1}
+{space 0}{space 0}{ralign 12:2}{space 1}{c |}{space 1}{ralign 9:{res:{sf:      537}}}{space 1}{space 1}{ralign 9:{res:{sf: 3.969251}}}{space 1}{space 1}{ralign 9:{res:{sf: 33.90152}}}{space 1}
+{space 0}{space 0}{ralign 12:Total}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     1584}}}{space 1}{space 1}{ralign 9:{res:{sf: 11.70818}}}{space 1}{space 1}{ralign 9:{res:{sf:      100}}}{space 1}
+{space 0}{hline 13}{c   +}{hline 11}{hline 11}{hline 11}
+{space 0}{res:{lalign 13:4}}{c |}{space 11}{space 11}{space 11}
+{space 0}{space 0}{ralign 12:1}{space 1}{c |}{space 1}{ralign 9:{res:{sf:      657}}}{space 1}{space 1}{ralign 9:{res:{sf: 4.856235}}}{space 1}{space 1}{ralign 9:{res:{sf: 79.63636}}}{space 1}
+{space 0}{space 0}{ralign 12:2}{space 1}{c |}{space 1}{ralign 9:{res:{sf:      168}}}{space 1}{space 1}{ralign 9:{res:{sf: 1.241777}}}{space 1}{space 1}{ralign 9:{res:{sf: 20.36364}}}{space 1}
+{space 0}{space 0}{ralign 12:Total}{space 1}{c |}{space 1}{ralign 9:{res:{sf:      825}}}{space 1}{space 1}{ralign 9:{res:{sf: 6.098012}}}{space 1}{space 1}{ralign 9:{res:{sf:      100}}}{space 1}
+{space 0}{hline 13}{c   +}{hline 11}{hline 11}{hline 11}
+{space 0}{res:{lalign 13:Total}}{c |}{space 11}{space 11}{space 11}
+{space 0}{space 0}{ralign 12:1}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     7143}}}{space 1}{space 1}{ralign 9:{res:{sf: 52.79769}}}{space 1}{space 1}{ralign 9:{res:{sf: 52.79769}}}{space 1}
+{space 0}{space 0}{ralign 12:2}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     6386}}}{space 1}{space 1}{ralign 9:{res:{sf: 47.20231}}}{space 1}{space 1}{ralign 9:{res:{sf: 47.20231}}}{space 1}
+{space 0}{space 0}{ralign 12:Total}{space 1}{c |}{space 1}{ralign 9:{res:{sf:    13529}}}{space 1}{space 1}{ralign 9:{res:{sf:      100}}}{space 1}{space 1}{ralign 9:{res:{sf:      100}}}{space 1}
+
+{space 0}{space 0}{ralign 12:wave}{space 1}{c |}{space 1}{ralign 9:e(rowpct)}{space 1}
+{space 0}{hline 13}{c   +}{hline 11}
+{space 0}{res:{lalign 13:1}}{c |}{space 11}
+{space 0}{space 0}{ralign 12:1}{space 1}{c |}{space 1}{ralign 9:{res:{sf: 50.38499}}}{space 1}
+{space 0}{space 0}{ralign 12:2}{space 1}{c |}{space 1}{ralign 9:{res:{sf: 69.08863}}}{space 1}
+{space 0}{space 0}{ralign 12:Total}{space 1}{c |}{space 1}{ralign 9:{res:{sf: 59.21354}}}{space 1}
+{space 0}{hline 13}{c   +}{hline 11}
+{space 0}{res:{lalign 13:2}}{c |}{space 11}
+{space 0}{space 0}{ralign 12:1}{space 1}{c |}{space 1}{ralign 9:{res:{sf: 25.75948}}}{space 1}
+{space 0}{space 0}{ralign 12:2}{space 1}{c |}{space 1}{ralign 9:{res:{sf: 19.87159}}}{space 1}
+{space 0}{space 0}{ralign 12:Total}{space 1}{c |}{space 1}{ralign 9:{res:{sf: 22.98026}}}{space 1}
+{space 0}{hline 13}{c   +}{hline 11}
+{space 0}{res:{lalign 13:3}}{c |}{space 11}
+{space 0}{space 0}{ralign 12:1}{space 1}{c |}{space 1}{ralign 9:{res:{sf: 14.65771}}}{space 1}
+{space 0}{space 0}{ralign 12:2}{space 1}{c |}{space 1}{ralign 9:{res:{sf:  8.40902}}}{space 1}
+{space 0}{space 0}{ralign 12:Total}{space 1}{c |}{space 1}{ralign 9:{res:{sf: 11.70818}}}{space 1}
+{space 0}{hline 13}{c   +}{hline 11}
+{space 0}{res:{lalign 13:4}}{c |}{space 11}
+{space 0}{space 0}{ralign 12:1}{space 1}{c |}{space 1}{ralign 9:{res:{sf: 9.197816}}}{space 1}
+{space 0}{space 0}{ralign 12:2}{space 1}{c |}{space 1}{ralign 9:{res:{sf: 2.630755}}}{space 1}
+{space 0}{space 0}{ralign 12:Total}{space 1}{c |}{space 1}{ralign 9:{res:{sf: 6.098012}}}{space 1}
+{space 0}{hline 13}{c   +}{hline 11}
+{space 0}{res:{lalign 13:Total}}{c |}{space 11}
+{space 0}{space 0}{ralign 12:1}{space 1}{c |}{space 1}{ralign 9:{res:{sf:      100}}}{space 1}
+{space 0}{space 0}{ralign 12:2}{space 1}{c |}{space 1}{ralign 9:{res:{sf:      100}}}{space 1}
+{space 0}{space 0}{ralign 12:Total}{space 1}{c |}{space 1}{ralign 9:{res:{sf:      100}}}{space 1}
+
+column labels saved in macro e(eqlabels)
+
+{com}. esttab using "${c -(}output{c )-}table_kessler_by_wave.csv", ///
+>     cell(colpct(fmt(1))) unstack noobs replace
+{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/table_kessler_by_wave.csv"'})
+
+{com}. 
+. 
+. save "${c -(}tempdata{c )-}depression_clean.dta", replace
+{txt}{p 0 4 2}
+file {bf}
+/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/03-tempdata/depression_clean.dta{rm}
+saved
+{p_end}
+
+{com}. 
+{txt}end of do-file
+
+{com}. do "${c -(}dofiles{c )-}03_merge_analysis_dataset.do"
+{txt}
+{com}. /*==============================================================================
+>   File:       03_merge_analysis_dataset.do
+>   Purpose:    Part 1, Section 8: Merge demographics, assets, and depression                   
+>               into a single individual-wave analysis dataset.
+>   Inputs:     ${c -(}tempdata{c )-}demographics_clean.dta
+>               ${c -(}tempdata{c )-}assets_hh_wave.dta
+>               ${c -(}tempdata{c )-}depression_clean.dta
+>   Outputs:    ${c -(}tempdata{c )-}analysis.dta
+>   
+>   MERGE STRATEGY
+>   ──────────────
+>   The analysis sample is defined by the depression dataset, since the K10
+>   was administered only to household heads and spouses — the population
+>   for whom the treatment (Group Therapy) was offered. We merge demographics
+>   and assets onto this spine.
+>   
+>       Depression  ← 1:1 →  Demographics   on (hhid, hhmid, wave)
+>       Depression  ← m:1 →  Assets         on (hhid, wave)
+>   
+>   Observations that exist only in demographics (other household members
+>   who were not heads/spouses) are not included.
+> ==============================================================================*/
+. 
+. * Loading depression data
+. use "${c -(}tempdata{c )-}depression_clean.dta", clear
+{txt}
+{com}. 
+. * Merging demographics 
+. merge 1:1 hhid hhmid wave using "${c -(}tempdata{c )-}demographics_clean.dta"
+{res}
+{txt}{col 5}Result{col 33}Number of obs
+{col 5}{hline 41}
+{col 5}Not matched{col 30}{res}          20,607
+{txt}{col 9}from master{col 30}{res}               0{txt}  (_merge==1)
+{col 9}from using{col 30}{res}          20,607{txt}  (_merge==2)
+
+{col 5}Matched{col 30}{res}          13,820{txt}  (_merge==3)
+{col 5}{hline 41}
+
+{com}. 
+. * Merge outcomes
+. tab _merge
+
+   {txt}Matching result from {c |}
+                  merge {c |}      Freq.     Percent        Cum.
+{hline 24}{c +}{hline 35}
+         Using only (2) {c |}{res}     20,607       59.86       59.86
+{txt}            Matched (3) {c |}{res}     13,820       40.14      100.00
+{txt}{hline 24}{c +}{hline 35}
+                  Total {c |}{res}     34,427      100.00
+{txt}
+{com}. 
+. 
+. keep if _merge == 3 
+{txt}(20,607 observations deleted)
+
+{com}. drop _merge
+{txt}
+{com}. 
+. * Merging household-wave asset aggregates 
+. merge m:1 hhid wave using "${c -(}tempdata{c )-}assets_hh_wave.dta"
+{res}
+{txt}{col 5}Result{col 33}Number of obs
+{col 5}{hline 41}
+{col 5}Not matched{col 30}{res}              63
+{txt}{col 9}from master{col 30}{res}              20{txt}  (_merge==1)
+{col 9}from using{col 30}{res}              43{txt}  (_merge==2)
+
+{col 5}Matched{col 30}{res}          13,800{txt}  (_merge==3)
+{col 5}{hline 41}
+
+{com}. 
+. tab _merge
+
+   {txt}Matching result from {c |}
+                  merge {c |}      Freq.     Percent        Cum.
+{hline 24}{c +}{hline 35}
+        Master only (1) {c |}{res}         20        0.14        0.14
+{txt}         Using only (2) {c |}{res}         43        0.31        0.45
+{txt}            Matched (3) {c |}{res}     13,800       99.55      100.00
+{txt}{hline 24}{c +}{hline 35}
+                  Total {c |}{res}     13,863      100.00
+{txt}
+{com}. 
+. keep if _merge == 3
+{txt}(63 observations deleted)
+
+{com}. drop _merge
+{txt}
+{com}. 
+. * Final verification
+. isid hhid hhmid wave
+{txt}
+{com}. // Confirmed that unit of observation is individual × wave. 
+. 
+. * Check that each person has at most 2 observations (one per wave)
+. bysort hhid hhmid: gen n_waves = _N
+{txt}
+{com}. assert n_waves <= 2
+{txt}
+{com}. drop n_waves
+{txt}
+{com}. 
+. * Checking treatment balance
+. tab treat_hh wave
+
+                    {txt}{c |}   Survey
+Treatment household {c |}    wave
+               (=1) {c |}         1 {c |}     Total
+{hline 20}{c +}{hline 11}{c +}{hline 10}
+  Control household {c |}{res}     3,705 {txt}{c |}{res}     6,895 
+{txt}Treatment household {c |}{res}     3,713 {txt}{c |}{res}     6,905 
+{txt}{hline 20}{c +}{hline 11}{c +}{hline 10}
+              Total {c |}{res}     7,418 {txt}{c |}{res}    13,800 
+
+
+                    {txt}{c |}   Survey
+Treatment household {c |}    wave
+               (=1) {c |}         2 {c |}     Total
+{hline 20}{c +}{hline 11}{c +}{hline 10}
+  Control household {c |}{res}     3,190 {txt}{c |}{res}     6,895 
+{txt}Treatment household {c |}{res}     3,192 {txt}{c |}{res}     6,905 
+{txt}{hline 20}{c +}{hline 11}{c +}{hline 10}
+              Total {c |}{res}     6,382 {txt}{c |}{res}    13,800 
+{txt}
+{com}. 
+. * [Creating useful derived variables for analysis]
+. 
+. * Binary: woman indicator
+. gen woman = (gender == 5) if !mi(gender)
+{txt}
+{com}. label var woman "Female (=1)"
+{txt}
+{com}. label define woman_lbl 0 "Male" 1 "Female"
+{txt}
+{com}. label values woman woman_lbl
+{txt}
+{com}. 
+. * Log of total asset value (for regressions)
+. gen ln_assets = ln(total_asset_value + 1)
+{txt}
+{com}. label var ln_assets "Log(1 + total asset value)"
+{txt}
+{com}. 
+. * Baseline K10 score (for ANCOVA specifications)
+. * Carry Wave 1 kessler_score forward to Wave 2 observations
+. bysort hhid hhmid (wave): gen kessler_baseline = kessler_score[1]
+{txt}(533 missing values generated)
+
+{com}. label var kessler_baseline "Baseline Kessler score (Wave 1)"
+{txt}
+{com}. 
+. * Confirm baseline is from Wave 1
+. assert kessler_baseline == kessler_score if wave == 1 & !mi(kessler_score)
+{txt}
+{com}. 
+. * Saving analysis dataset 
+. compress
+  {txt}variable {bf}{res}kessler_score{sf}{txt} was {bf}{res}float{sf}{txt} now {bf}{res}byte{sf}
+  {txt}variable {bf}{res}kessler_cat{sf}{txt} was {bf}{res}float{sf}{txt} now {bf}{res}byte{sf}
+  {txt}variable {bf}{res}villageid{sf}{txt} was {bf}{res}float{sf}{txt} now {bf}{res}int{sf}
+  {txt}variable {bf}{res}treat_hh{sf}{txt} was {bf}{res}float{sf}{txt} now {bf}{res}byte{sf}
+  {txt}variable {bf}{res}hh_size{sf}{txt} was {bf}{res}float{sf}{txt} now {bf}{res}byte{sf}
+  {txt}variable {bf}{res}woman{sf}{txt} was {bf}{res}float{sf}{txt} now {bf}{res}byte{sf}
+  {txt}variable {bf}{res}kessler_baseline{sf}{txt} was {bf}{res}float{sf}{txt} now {bf}{res}byte{sf}
+  {txt}variable {bf}{res}wave{sf}{txt} was {bf}{res}double{sf}{txt} now {bf}{res}byte{sf}
+  {txt}variable {bf}{res}hhmid{sf}{txt} was {bf}{res}double{sf}{txt} now {bf}{res}byte{sf}
+  {txt}variable {bf}{res}tired{sf}{txt} was {bf}{res}double{sf}{txt} now {bf}{res}byte{sf}
+  {txt}variable {bf}{res}nervous{sf}{txt} was {bf}{res}double{sf}{txt} now {bf}{res}byte{sf}
+  {txt}variable {bf}{res}sonervous{sf}{txt} was {bf}{res}double{sf}{txt} now {bf}{res}byte{sf}
+  {txt}variable {bf}{res}hopeless{sf}{txt} was {bf}{res}double{sf}{txt} now {bf}{res}byte{sf}
+  {txt}variable {bf}{res}restless{sf}{txt} was {bf}{res}double{sf}{txt} now {bf}{res}byte{sf}
+  {txt}variable {bf}{res}sorestless{sf}{txt} was {bf}{res}double{sf}{txt} now {bf}{res}byte{sf}
+  {txt}variable {bf}{res}depressed{sf}{txt} was {bf}{res}double{sf}{txt} now {bf}{res}byte{sf}
+  {txt}variable {bf}{res}everythingeffort{sf}{txt} was {bf}{res}double{sf}{txt} now {bf}{res}byte{sf}
+  {txt}variable {bf}{res}nothingcheerup{sf}{txt} was {bf}{res}double{sf}{txt} now {bf}{res}byte{sf}
+  {txt}variable {bf}{res}worthless{sf}{txt} was {bf}{res}double{sf}{txt} now {bf}{res}byte{sf}
+{txt}  (1,435,200 bytes saved)
+
+{com}. save "${c -(}tempdata{c )-}analysis.dta", replace
+{txt}{p 0 4 2}
+file {bf}
+/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/03-tempdata/analysis.dta{rm}
+saved
+{p_end}
+
+{com}. 
+. di as text "Analysis dataset saved: " as result "`c(N)'" as text " observations"
+{res}{txt}Analysis dataset saved: {res}13800{txt} observations
+
+{com}. 
+{txt}end of do-file
+
+{com}. do "${c -(}dofiles{c )-}04_exploratory_analysis.do"
+{txt}
+{com}. /*==============================================================================
+>   File:       04_exploratory_analysis.do
+>   Purpose:    Part 2: Explore the relationship between depression and
+>               (a) household wealth, (b) gender, (c) household size —
+>               using Wave 1 (pre-intervention) data.
+>   Inputs:     ${c -(}tempdata{c )-}analysis.dta
+>   Outputs:    Figures:
+>                 ${c -(}output{c )-}fig_wealth_depression.png
+>                 ${c -(}output{c )-}fig_gender_density.png
+>                 ${c -(}output{c )-}fig_hhsize_depression.png
+>               Tables (LaTeX):
+>                 ${c -(}output{c )-}tab_wealth_quartiles.tex
+>                 ${c -(}output{c )-}tab_wealth_reg.tex
+>                 ${c -(}output{c )-}tab_gender_summary.tex
+>                 ${c -(}output{c )-}tab_hhsize_reg.tex
+>   
+>   All analyses use Wave 1 data collected prior to treatment assignment.
+>   Relationships are descriptive correlations, not causal effects.
+> ==============================================================================*/
+. 
+. use "${c -(}tempdata{c )-}analysis.dta", clear
+{txt}
+{com}. keep if wave == 1
+{txt}(6,382 observations deleted)
+
+{com}. 
+. 
+. /*──────────────────────────────────────────────────────────────────────────────
+>   DEPRESSION AND HOUSEHOLD WEALTH
+> ──────────────────────────────────────────────────────────────────────────────*/
+. 
+. * Wealth quartiles
+. xtile wealth_q = total_asset_value, nq(4)
+{txt}
+{com}. label define wq_lbl 1 "Q1 (Poorest)" 2 "Q2" 3 "Q3" 4 "Q4 (Richest)"
+{txt}
+{com}. label values wealth_q wq_lbl
+{txt}
+{com}. 
+. gen severe = (kessler_cat == 4) if !mi(kessler_cat)
+{txt}(291 missing values generated)
+
+{com}. 
+. * Summary by quartile (Also eventually exporting to LaTeX)
+. estpost tabstat kessler_score severe if !mi(kessler_score), ///
+>     by(wealth_q) stat(count mean sd) columns(stat) nototal
+
+{txt}Summary statistics: count mean sd
+     for variables: kessler_score severe
+  by categories of: wealth_q
+
+{space 0}{space 0}{ralign 12:wealth_q}{space 1}{c |}{space 1}{ralign 9:e(count)}{space 1}{space 1}{ralign 9:e(mean)}{space 1}{space 1}{ralign 9:e(sd)}{space 1}
+{space 0}{hline 13}{c   +}{hline 11}{hline 11}{hline 11}
+{space 0}{res:{lalign 13:Q1(Poorest)}}{c |}{space 11}{space 11}{space 11}
+{space 0}{space 0}{ralign 12:kessler_sc~e}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     1777}}}{space 1}{space 1}{ralign 9:{res:{sf: 21.06415}}}{space 1}{space 1}{ralign 9:{res:{sf: 6.330459}}}{space 1}
+{space 0}{space 0}{ralign 12:severe}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     1777}}}{space 1}{space 1}{ralign 9:{res:{sf: .1119865}}}{space 1}{space 1}{ralign 9:{res:{sf: .3154386}}}{space 1}
+{space 0}{hline 13}{c   +}{hline 11}{hline 11}{hline 11}
+{space 0}{res:{lalign 13:Q2}}{c |}{space 11}{space 11}{space 11}
+{space 0}{space 0}{ralign 12:kessler_sc~e}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     1788}}}{space 1}{space 1}{ralign 9:{res:{sf:  20.2047}}}{space 1}{space 1}{ralign 9:{res:{sf: 6.252882}}}{space 1}
+{space 0}{space 0}{ralign 12:severe}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     1788}}}{space 1}{space 1}{ralign 9:{res:{sf:  .086689}}}{space 1}{space 1}{ralign 9:{res:{sf: .2814576}}}{space 1}
+{space 0}{hline 13}{c   +}{hline 11}{hline 11}{hline 11}
+{space 0}{res:{lalign 13:Q3}}{c |}{space 11}{space 11}{space 11}
+{space 0}{space 0}{ralign 12:kessler_sc~e}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     1788}}}{space 1}{space 1}{ralign 9:{res:{sf: 19.68345}}}{space 1}{space 1}{ralign 9:{res:{sf:  6.30625}}}{space 1}
+{space 0}{space 0}{ralign 12:severe}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     1788}}}{space 1}{space 1}{ralign 9:{res:{sf:  .082774}}}{space 1}{space 1}{ralign 9:{res:{sf: .2756175}}}{space 1}
+{space 0}{hline 13}{c   +}{hline 11}{hline 11}{hline 11}
+{space 0}{res:{lalign 13:Q4(Richest)}}{c |}{space 11}{space 11}{space 11}
+{space 0}{space 0}{ralign 12:kessler_sc~e}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     1774}}}{space 1}{space 1}{ralign 9:{res:{sf:  20.1894}}}{space 1}{space 1}{ralign 9:{res:{sf: 6.250837}}}{space 1}
+{space 0}{space 0}{ralign 12:severe}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     1774}}}{space 1}{space 1}{ralign 9:{res:{sf: .0851184}}}{space 1}{space 1}{ralign 9:{res:{sf: .2791365}}}{space 1}
+
+{com}. esttab using "${c -(}output{c )-}tab_wealth_quartiles.tex", ///
+>     cells("count(fmt(0)) mean(fmt(2)) sd(fmt(2))") ///
+>     noobs replace booktabs ///
+>     title("Baseline Depression by Household Wealth Quartile")
+{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/tab_wealth_quartiles.tex"'})
+
+{com}. 
+. * Figure 1: Binned scatter — K10 on log(assets)
+. preserve
+{txt}
+{com}.     xtile asset_bin = ln_assets, nq(20)
+{txt}
+{com}.     collapse (mean) kessler_score ln_assets, by(asset_bin)
+{res}{txt}
+{com}.     
+.     twoway (scatter kessler_score ln_assets, ///
+>                 msymbol(circle) msize(medium) mcolor(navy%80)) ///
+>            (lfit kessler_score ln_assets, ///
+>                 lcolor(cranberry) lwidth(medthick)), ///
+>         xtitle("Log(1 + total asset value) (Wave 1, bin mean)") ///
+>         ytitle("Mean Kessler score (Wave 1)") ///
+>         title("Wave 1: Depression and Household Wealth (log scale, binned means)") ///
+>         legend(off) ///
+>         note("Each point represents the mean Kessler score within a 5-percentile" ///
+>              "bin of log household asset values. Line shows OLS fit.") ///
+>         scheme(s2color)
+{res}{txt}
+{com}. 
+.     graph export "${c -(}output{c )-}fig_wealth_depression.png", width(1800) replace
+{txt}{p 0 4 2}
+file {bf}
+/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/fig_wealth_depression.png{rm}
+saved as
+PNG
+format
+{p_end}
+
+{com}. restore
+{txt}
+{com}. 
+. drop severe
+{txt}
+{com}. 
+. * Regression: K10 on log(assets) 
+. eststo clear
+{txt}
+{com}. 
+. reg kessler_score ln_assets, vce(cluster hhid)
+
+{txt}Linear regression                               Number of obs     = {res}     7,127
+                                                {txt}F(1, 4797)        =  {res}     8.82
+                                                {txt}Prob > F          = {res}    0.0030
+                                                {txt}R-squared         = {res}    0.0021
+                                                {txt}Root MSE          =    {res} 6.2973
+
+{txt}{ralign 78:(Std. err. adjusted for {res:4,798} clusters in {res:hhid})}
+{hline 13}{c TT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{col 14}{c |}{col 26}    Robust
+{col 1}kessler_sc~e{col 14}{c |} Coefficient{col 26}  std. err.{col 38}      t{col 46}   P>|t|{col 54}     [95% con{col 67}f. interval]
+{hline 13}{c +}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{space 3}ln_assets {c |}{col 14}{res}{space 2}-.2151345{col 26}{space 2} .0724568{col 37}{space 1}   -2.97{col 46}{space 3}0.003{col 54}{space 4}-.3571832{col 67}{space 3}-.0730859
+{txt}{space 7}_cons {c |}{col 14}{res}{space 2} 21.98118{col 26}{space 2} .5692949{col 37}{space 1}   38.61{col 46}{space 3}0.000{col 54}{space 4}  20.8651{col 67}{space 3} 23.09725
+{txt}{hline 13}{c BT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{res}{txt}
+{com}. eststo m1
+{txt}
+{com}. 
+. reg kessler_score ln_assets age woman hh_size, vce(cluster hhid)
+
+{txt}Linear regression                               Number of obs     = {res}     7,127
+                                                {txt}F(4, 4797)        =  {res}    40.13
+                                                {txt}Prob > F          = {res}    0.0000
+                                                {txt}R-squared         = {res}    0.0215
+                                                {txt}Root MSE          =    {res} 6.2369
+
+{txt}{ralign 78:(Std. err. adjusted for {res:4,798} clusters in {res:hhid})}
+{hline 13}{c TT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{col 14}{c |}{col 26}    Robust
+{col 1}kessler_sc~e{col 14}{c |} Coefficient{col 26}  std. err.{col 38}      t{col 46}   P>|t|{col 54}     [95% con{col 67}f. interval]
+{hline 13}{c +}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{space 3}ln_assets {c |}{col 14}{res}{space 2}-.4147491{col 26}{space 2} .0751602{col 37}{space 1}   -5.52{col 46}{space 3}0.000{col 54}{space 4}-.5620976{col 67}{space 3}-.2674007
+{txt}{space 9}age {c |}{col 14}{res}{space 2} .0008627{col 26}{space 2} .0014533{col 37}{space 1}    0.59{col 46}{space 3}0.553{col 54}{space 4}-.0019865{col 67}{space 3} .0037119
+{txt}{space 7}woman {c |}{col 14}{res}{space 2} .9643523{col 26}{space 2} .1088308{col 37}{space 1}    8.86{col 46}{space 3}0.000{col 54}{space 4} .7509942{col 67}{space 3} 1.177711
+{txt}{space 5}hh_size {c |}{col 14}{res}{space 2} .2974665{col 26}{space 2} .0381578{col 37}{space 1}    7.80{col 46}{space 3}0.000{col 54}{space 4} .2226598{col 67}{space 3} .3722732
+{txt}{space 7}_cons {c |}{col 14}{res}{space 2} 21.70984{col 26}{space 2} .5708748{col 37}{space 1}   38.03{col 46}{space 3}0.000{col 54}{space 4} 20.59067{col 67}{space 3} 22.82902
+{txt}{hline 13}{c BT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{res}{txt}
+{com}. eststo m2
+{txt}
+{com}. 
+. esttab m1 m2 using "${c -(}output{c )-}tab_wealth_reg.tex", ///
+>     replace booktabs ///
+>     se star(* 0.10 ** 0.05 *** 0.01) ///
+>     b(3) se(3) ///
+>     label ///
+>     mtitles("Bivariate" "With controls") ///
+>     stats(N r2, labels("Observations" "R-squared") fmt(0 3)) ///
+>     title("Descriptive Regression: Depression on Household Wealth (Wave 1)") ///
+>     addnotes("Standard errors clustered at household level." ///
+>              "Dependent variable: Kessler-10 score (10--50).")
+{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/tab_wealth_reg.tex"'})
+
+{com}. 
+. 
+. /*──────────────────────────────────────────────────────────────────────────────
+>   DEPRESSION AND GENDER
+> ──────────────────────────────────────────────────────────────────────────────*/
+. 
+. * Summary table 
+. gen mod_severe = (kessler_cat >= 3) if !mi(kessler_cat)
+{txt}(291 missing values generated)
+
+{com}. 
+. estpost tabstat kessler_score mod_severe if !mi(kessler_score), ///
+>     by(woman) stat(count mean sd) columns(stat) nototal
+
+{txt}Summary statistics: count mean sd
+     for variables: kessler_score mod_severe
+  by categories of: woman
+
+{space 0}{space 0}{ralign 12:woman}{space 1}{c |}{space 1}{ralign 9:e(count)}{space 1}{space 1}{ralign 9:e(mean)}{space 1}{space 1}{ralign 9:e(sd)}{space 1}
+{space 0}{hline 13}{c   +}{hline 11}{hline 11}{hline 11}
+{space 0}{res:{lalign 13:Male}}{c |}{space 11}{space 11}{space 11}
+{space 0}{space 0}{ralign 12:kessler_sc~e}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     3162}}}{space 1}{space 1}{ralign 9:{res:{sf: 19.70082}}}{space 1}{space 1}{ralign 9:{res:{sf: 6.253047}}}{space 1}
+{space 0}{space 0}{ralign 12:mod_severe}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     3162}}}{space 1}{space 1}{ralign 9:{res:{sf: .2043011}}}{space 1}{space 1}{ralign 9:{res:{sf: .4032537}}}{space 1}
+{space 0}{hline 13}{c   +}{hline 11}{hline 11}{hline 11}
+{space 0}{res:{lalign 13:Female}}{c |}{space 11}{space 11}{space 11}
+{space 0}{space 0}{ralign 12:kessler_sc~e}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     3965}}}{space 1}{space 1}{ralign 9:{res:{sf: 20.74981}}}{space 1}{space 1}{ralign 9:{res:{sf: 6.305497}}}{space 1}
+{space 0}{space 0}{ralign 12:mod_severe}{space 1}{c |}{space 1}{ralign 9:{res:{sf:     3965}}}{space 1}{space 1}{ralign 9:{res:{sf: .2648172}}}{space 1}{space 1}{ralign 9:{res:{sf: .4412914}}}{space 1}
+
+{com}. esttab using "${c -(}output{c )-}tab_gender_summary.tex", ///
+>     cells("count(fmt(0)) mean(fmt(2)) sd(fmt(2))") ///
+>     noobs replace booktabs ///
+>     title("Baseline Depression by Gender")
+{txt}(tabulating estimates stored by eststo; specify "." to tabulate the active results)
+{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/tab_gender_summary.tex"'})
+
+{com}. 
+. * Figure 2: Overlapping kernel densities by gender
+. twoway (kdensity kessler_score if woman == 0, ///
+>             lcolor(navy) lwidth(medthick) lpattern(solid)) ///
+>        (kdensity kessler_score if woman == 1, ///
+>             lcolor(cranberry) lwidth(medthick) lpattern(dash)), ///
+>     xtitle("Kessler score (Wave 1)") ///
+>     ytitle("Density") ///
+>     title("Wave 1: Distribution of Kessler Scores by Gender") ///
+>     legend(order(1 "Male" 2 "Female") ring(0) pos(2)) ///
+>     scheme(s2color)
+{res}{txt}
+{com}. 
+. graph export "${c -(}output{c )-}fig_gender_density.png", width(1800) replace
+{txt}{p 0 4 2}
+file {bf}
+/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/fig_gender_density.png{rm}
+saved as
+PNG
+format
+{p_end}
+
+{com}. 
+. drop mod_severe
+{txt}
+{com}. 
+. 
+. /*──────────────────────────────────────────────────────────────────────────────
+>   DEPRESSION AND HOUSEHOLD SIZE
+> ──────────────────────────────────────────────────────────────────────────────*/
+. 
+. * Figure 3: Mean K10 by household size (with observation-weighted markers)
+. preserve
+{txt}
+{com}.     collapse (mean) kessler_score (count) n = kessler_score, by(hh_size)
+{res}{txt}
+{com}.     
+.     twoway (scatter kessler_score hh_size [aw = n], ///
+>                 msymbol(circle) mcolor(navy%60)) ///
+>            (lfit kessler_score hh_size [aw = n], ///
+>                 lcolor(cranberry) lwidth(medthick)), ///
+>         xtitle("Household size") ///
+>         ytitle("Mean Kessler score (Wave 1)") ///
+>         title("Wave 1: Mean Depression by Household Size (weighted trend)") ///
+>         legend(label(1 "Mean (marker size = observations)") ///
+>                label(2 "Weighted linear fit") ring(0) pos(5)) ///
+>         scheme(s2color)
+{res}{txt}
+{com}. 
+.     graph export "${c -(}output{c )-}fig_hhsize_depression.png", width(1800) replace
+{txt}{p 0 4 2}
+file {bf}
+/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/fig_hhsize_depression.png{rm}
+saved as
+PNG
+format
+{p_end}
+
+{com}. restore
+{txt}
+{com}. 
+. * Regression: K10 on household size 
+. eststo clear
+{txt}
+{com}. 
+. reg kessler_score hh_size, vce(cluster hhid)
+
+{txt}Linear regression                               Number of obs     = {res}     7,127
+                                                {txt}F(1, 4797)        =  {res}    39.68
+                                                {txt}Prob > F          = {res}    0.0000
+                                                {txt}R-squared         = {res}    0.0085
+                                                {txt}Root MSE          =    {res} 6.2769
+
+{txt}{ralign 78:(Std. err. adjusted for {res:4,798} clusters in {res:hhid})}
+{hline 13}{c TT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{col 14}{c |}{col 26}    Robust
+{col 1}kessler_sc~e{col 14}{c |} Coefficient{col 26}  std. err.{col 38}      t{col 46}   P>|t|{col 54}     [95% con{col 67}f. interval]
+{hline 13}{c +}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{space 5}hh_size {c |}{col 14}{res}{space 2} .2260452{col 26}{space 2} .0358845{col 37}{space 1}    6.30{col 46}{space 3}0.000{col 54}{space 4}  .155695{col 67}{space 3} .2963953
+{txt}{space 7}_cons {c |}{col 14}{res}{space 2} 19.31933{col 26}{space 2} .1660783{col 37}{space 1}  116.33{col 46}{space 3}0.000{col 54}{space 4} 18.99374{col 67}{space 3} 19.64492
+{txt}{hline 13}{c BT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{res}{txt}
+{com}. eststo m_hhsize
+{txt}
+{com}. 
+. esttab m_hhsize using "${c -(}output{c )-}tab_hhsize_reg.tex", ///
+>     replace booktabs ///
+>     se star(* 0.10 ** 0.05 *** 0.01) ///
+>     b(3) se(3) ///
+>     label ///
+>     stats(N r2, labels("Observations" "R-squared") fmt(0 3)) ///
+>     title("Descriptive Regression: Depression on Household Size (Wave 1)") ///
+>     addnotes("Standard errors clustered at household level." ///
+>              "Dependent variable: Kessler-10 score (10--50).")
+{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/tab_hhsize_reg.tex"'})
+
+{com}. 
+{txt}end of do-file
+
+{com}. do "${c -(}dofiles{c )-}05_rct_evaluation.do"
+{txt}
+{com}. /*==============================================================================
+>   File:       05_rct_evaluation.do
+>   Purpose:    Part 2, Section 2 and 3: Estimate treatment effects of Group 
+>               Therapy on depression; examine gender heterogeneity.
+>   Inputs:     ${c -(}tempdata{c )-}analysis.dta
+>   Outputs:    ${c -(}output{c )-}table_treatment_effects.tex
+>               ${c -(}output{c )-}table_gender_heterogeneity.tex
+>   
+>   ECONOMETRIC FRAMEWORK
+>   ─────────────────────
+>   Treatment was randomly assigned at the household level after Wave 1.
+>   Heads and spouses in treated households were invited to Group Therapy.
+>   We assume perfect compliance (as instructed).
+>   
+>   Under random assignment:
+>   - Simple difference-in-means (DIM) gives an unbiased ATE.
+>   - ANCOVA (controlling for baseline K10) improves precision by absorbing
+>     persistent individual variation in depression (McKenzie 2012).
+>   - Standard errors are clustered at the household level (the unit of 
+>     treatment assignment).
+> ==============================================================================*/
+. 
+. use "${c -(}tempdata{c )-}analysis.dta", clear
+{txt}
+{com}. 
+. 
+. /*──────────────────────────────────────────────────────────────────────────────
+>   2. WERE THE GT SESSIONS EFFECTIVE AT REDUCING DEPRESSION?
+> ──────────────────────────────────────────────────────────────────────────────*/
+. 
+. * Verifing randomization through balance check on baseline characteristics 
+. 
+. preserve
+{txt}
+{com}. keep if wave == 1
+{txt}(6,382 observations deleted)
+
+{com}. 
+. foreach var in kessler_score age woman hh_size total_asset_value {c -(}
+{txt}  2{com}.     di as text _n "Balance check: `var'"
+{txt}  3{com}.     reg `var' treat_hh, vce(cluster hhid)
+{txt}  4{com}. {c )-}
+
+{txt}Balance check: kessler_score
+
+Linear regression                               Number of obs     = {res}     7,127
+                                                {txt}F(1, 4797)        =  {res}     0.00
+                                                {txt}Prob > F          = {res}    0.9627
+                                                {txt}R-squared         = {res}    0.0000
+                                                {txt}Root MSE          =    {res} 6.3039
+
+{txt}{ralign 78:(Std. err. adjusted for {res:4,798} clusters in {res:hhid})}
+{hline 13}{c TT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{col 14}{c |}{col 26}    Robust
+{col 1}kessler_sc~e{col 14}{c |} Coefficient{col 26}  std. err.{col 38}      t{col 46}   P>|t|{col 54}     [95% con{col 67}f. interval]
+{hline 13}{c +}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{space 4}treat_hh {c |}{col 14}{res}{space 2}-.0086044{col 26}{space 2} .1837689{col 37}{space 1}   -0.05{col 46}{space 3}0.963{col 54}{space 4}-.3688757{col 67}{space 3} .3516668
+{txt}{space 7}_cons {c |}{col 14}{res}{space 2} 20.28874{col 26}{space 2}  .130556{col 37}{space 1}  155.40{col 46}{space 3}0.000{col 54}{space 4} 20.03279{col 67}{space 3} 20.54469
+{txt}{hline 13}{c BT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{res}
+{txt}Balance check: age
+
+Linear regression                               Number of obs     = {res}     7,418
+                                                {txt}F(1, 4965)        =  {res}     1.42
+                                                {txt}Prob > F          = {res}    0.2342
+                                                {txt}R-squared         = {res}    0.0002
+                                                {txt}Root MSE          =    {res} 66.323
+
+{txt}{ralign 78:(Std. err. adjusted for {res:4,966} clusters in {res:hhid})}
+{hline 13}{c TT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{col 14}{c |}{col 26}    Robust
+{col 1}         age{col 14}{c |} Coefficient{col 26}  std. err.{col 38}      t{col 46}   P>|t|{col 54}     [95% con{col 67}f. interval]
+{hline 13}{c +}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{space 4}treat_hh {c |}{col 14}{res}{space 2}   1.9595{col 26}{space 2} 1.646829{col 37}{space 1}    1.19{col 46}{space 3}0.234{col 54}{space 4}-1.269012{col 67}{space 3} 5.188013
+{txt}{space 7}_cons {c |}{col 14}{res}{space 2} 44.42186{col 26}{space 2} 1.354786{col 37}{space 1}   32.79{col 46}{space 3}0.000{col 54}{space 4} 41.76588{col 67}{space 3} 47.07784
+{txt}{hline 13}{c BT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{res}
+{txt}Balance check: woman
+
+Linear regression                               Number of obs     = {res}     7,418
+                                                {txt}F(1, 4965)        =  {res}     0.11
+                                                {txt}Prob > F          = {res}    0.7445
+                                                {txt}R-squared         = {res}    0.0000
+                                                {txt}Root MSE          =    {res} .49677
+
+{txt}{ralign 78:(Std. err. adjusted for {res:4,966} clusters in {res:hhid})}
+{hline 13}{c TT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{col 14}{c |}{col 26}    Robust
+{col 1}       woman{col 14}{c |} Coefficient{col 26}  std. err.{col 38}      t{col 46}   P>|t|{col 54}     [95% con{col 67}f. interval]
+{hline 13}{c +}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{space 4}treat_hh {c |}{col 14}{res}{space 2}-.0022805{col 26}{space 2} .0069962{col 37}{space 1}   -0.33{col 46}{space 3}0.744{col 54}{space 4}-.0159961{col 67}{space 3} .0114351
+{txt}{space 7}_cons {c |}{col 14}{res}{space 2} .5584345{col 26}{space 2} .0049556{col 37}{space 1}  112.69{col 46}{space 3}0.000{col 54}{space 4} .5487194{col 67}{space 3} .5681497
+{txt}{hline 13}{c BT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{res}
+{txt}Balance check: hh_size
+
+Linear regression                               Number of obs     = {res}     7,418
+                                                {txt}F(1, 4965)        =  {res}     1.46
+                                                {txt}Prob > F          = {res}    0.2269
+                                                {txt}R-squared         = {res}    0.0004
+                                                {txt}Root MSE          =    {res} 2.5957
+
+{txt}{ralign 78:(Std. err. adjusted for {res:4,966} clusters in {res:hhid})}
+{hline 13}{c TT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{col 14}{c |}{col 26}    Robust
+{col 1}     hh_size{col 14}{c |} Coefficient{col 26}  std. err.{col 38}      t{col 46}   P>|t|{col 54}     [95% con{col 67}f. interval]
+{hline 13}{c +}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{space 4}treat_hh {c |}{col 14}{res}{space 2}-.0987725{col 26}{space 2} .0817284{col 37}{space 1}   -1.21{col 46}{space 3}0.227{col 54}{space 4}-.2589962{col 67}{space 3} .0614513
+{txt}{space 7}_cons {c |}{col 14}{res}{space 2}  4.34278{col 26}{space 2} .0605196{col 37}{space 1}   71.76{col 46}{space 3}0.000{col 54}{space 4} 4.224135{col 67}{space 3} 4.461425
+{txt}{hline 13}{c BT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{res}
+{txt}Balance check: total_asset_value
+
+Linear regression                               Number of obs     = {res}     7,418
+                                                {txt}F(1, 4965)        =  {res}     0.15
+                                                {txt}Prob > F          = {res}    0.6943
+                                                {txt}R-squared         = {res}    0.0000
+                                                {txt}Root MSE          =    {res} 1.2e+05
+
+{txt}{ralign 78:(Std. err. adjusted for {res:4,966} clusters in {res:hhid})}
+{hline 13}{c TT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{col 14}{c |}{col 26}    Robust
+{col 1}total_asse~e{col 14}{c |} Coefficient{col 26}  std. err.{col 38}      t{col 46}   P>|t|{col 54}     [95% con{col 67}f. interval]
+{hline 13}{c +}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{space 4}treat_hh {c |}{col 14}{res}{space 2}-1613.971{col 26}{space 2} 4105.711{col 37}{space 1}   -0.39{col 46}{space 3}0.694{col 54}{space 4}-9662.979{col 67}{space 3} 6435.036
+{txt}{space 7}_cons {c |}{col 14}{res}{space 2} 12330.57{col 26}{space 2} 2570.284{col 37}{space 1}    4.80{col 46}{space 3}0.000{col 54}{space 4} 7291.678{col 67}{space 3} 17369.46
+{txt}{hline 13}{c BT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{res}{txt}
+{com}. restore
+{txt}
+{com}. 
+. * Treatment effect estimation (Wave 2 outcomes)
+. preserve
+{txt}
+{com}. keep if wave == 2 & !mi(kessler_score)
+{txt}(7,418 observations deleted)
+
+{com}. 
+. eststo clear
+{txt}
+{com}. 
+. * Model 1: Simple difference-in-means
+. *   Kessler_i2 = α + β·Treat_h + ε_ih
+. reg kessler_score treat_hh, vce(cluster hhid)
+
+{txt}Linear regression                               Number of obs     = {res}     6,382
+                                                {txt}F(1, 4347)        =  {res}    11.48
+                                                {txt}Prob > F          = {res}    0.0007
+                                                {txt}R-squared         = {res}    0.0024
+                                                {txt}Root MSE          =    {res} 5.4673
+
+{txt}{ralign 78:(Std. err. adjusted for {res:4,348} clusters in {res:hhid})}
+{hline 13}{c TT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{col 14}{c |}{col 26}    Robust
+{col 1}kessler_sc~e{col 14}{c |} Coefficient{col 26}  std. err.{col 38}      t{col 46}   P>|t|{col 54}     [95% con{col 67}f. interval]
+{hline 13}{c +}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{space 4}treat_hh {c |}{col 14}{res}{space 2}-.5310231{col 26}{space 2}  .156711{col 37}{space 1}   -3.39{col 46}{space 3}0.001{col 54}{space 4}-.8382565{col 67}{space 3}-.2237897
+{txt}{space 7}_cons {c |}{col 14}{res}{space 2} 17.51285{col 26}{space 2}  .113506{col 37}{space 1}  154.29{col 46}{space 3}0.000{col 54}{space 4} 17.29032{col 67}{space 3} 17.73538
+{txt}{hline 13}{c BT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{res}{txt}
+{com}. eststo m_dim
+{txt}
+{com}. estadd scalar control_mean = _b[_cons]
+
+{txt}added scalar:
+       e(control_mean) =  {res}17.512853
+{txt}
+{com}. 
+. * Model 2: ANCOVA — control for baseline K10
+. *   Kessler_i2 = α + β·Treat_h + γ·Kessler_i1 + ε_ih
+. *
+. *   Preferred specification. Under random assignment, both models are
+. *   unbiased for the ATE. ANCOVA reduces residual variance by exploiting
+. *   the strong serial correlation in K10 scores, yielding more precise
+. *   estimates (Bruhn & McKenzie 2009).
+. reg kessler_score treat_hh kessler_baseline, vce(cluster hhid)
+
+{txt}Linear regression                               Number of obs     = {res}     6,140
+                                                {txt}F(2, 4214)        =  {res}   151.19
+                                                {txt}Prob > F          = {res}    0.0000
+                                                {txt}R-squared         = {res}    0.0634
+                                                {txt}Root MSE          =    {res}    5.3
+
+{txt}{ralign 78:(Std. err. adjusted for {res:4,215} clusters in {res:hhid})}
+{hline 13}{c TT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{col 14}{c |}{col 26}    Robust
+{col 1}kessler_sc~e{col 14}{c |} Coefficient{col 26}  std. err.{col 38}      t{col 46}   P>|t|{col 54}     [95% con{col 67}f. interval]
+{hline 13}{c +}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{space 4}treat_hh {c |}{col 14}{res}{space 2}-.4896282{col 26}{space 2} .1537882{col 37}{space 1}   -3.18{col 46}{space 3}0.001{col 54}{space 4}-.7911342{col 67}{space 3}-.1881223
+{txt}kessler_ba~e {c |}{col 14}{res}{space 2} .2179669{col 26}{space 2} .0127465{col 37}{space 1}   17.10{col 46}{space 3}0.000{col 54}{space 4} .1929772{col 67}{space 3} .2429567
+{txt}{space 7}_cons {c |}{col 14}{res}{space 2} 13.14232{col 26}{space 2} .2649003{col 37}{space 1}   49.61{col 46}{space 3}0.000{col 54}{space 4} 12.62298{col 67}{space 3} 13.66166
+{txt}{hline 13}{c BT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{res}{txt}
+{com}. eststo m_ancova
+{txt}
+{com}. estadd scalar control_mean = _b[_cons] + _b[kessler_baseline] * 20.3
+
+{txt}added scalar:
+       e(control_mean) =  {res}17.567049
+{txt}
+{com}.     // approximate: control mean of baseline K10 ≈ 20.3
+. 
+. * Model 3: ANCOVA with demographic controls
+. *   Adding controls that are pre-determined (age, gender, hh size) should
+. *   not change the point estimate under valid randomization, but can
+. *   further improve precision.
+. reg kessler_score treat_hh kessler_baseline age woman hh_size, vce(cluster hhid)
+
+{txt}Linear regression                               Number of obs     = {res}     6,140
+                                                {txt}F(5, 4214)        =  {res}    64.84
+                                                {txt}Prob > F          = {res}    0.0000
+                                                {txt}R-squared         = {res}    0.0764
+                                                {txt}Root MSE          =    {res} 5.2645
+
+{txt}{ralign 78:(Std. err. adjusted for {res:4,215} clusters in {res:hhid})}
+{hline 13}{c TT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{col 14}{c |}{col 26}    Robust
+{col 1}kessler_sc~e{col 14}{c |} Coefficient{col 26}  std. err.{col 38}      t{col 46}   P>|t|{col 54}     [95% con{col 67}f. interval]
+{hline 13}{c +}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{space 4}treat_hh {c |}{col 14}{res}{space 2}-.4805306{col 26}{space 2} .1521315{col 37}{space 1}   -3.16{col 46}{space 3}0.002{col 54}{space 4}-.7787884{col 67}{space 3}-.1822728
+{txt}kessler_ba~e {c |}{col 14}{res}{space 2} .2032546{col 26}{space 2} .0137197{col 37}{space 1}   14.81{col 46}{space 3}0.000{col 54}{space 4} .1763567{col 67}{space 3} .2301525
+{txt}{space 9}age {c |}{col 14}{res}{space 2} .0291245{col 26}{space 2} .0126357{col 37}{space 1}    2.30{col 46}{space 3}0.021{col 54}{space 4}  .004352{col 67}{space 3} .0538971
+{txt}{space 7}woman {c |}{col 14}{res}{space 2} .3422183{col 26}{space 2} .1234433{col 37}{space 1}    2.77{col 46}{space 3}0.006{col 54}{space 4} .1002043{col 67}{space 3} .5842323
+{txt}{space 5}hh_size {c |}{col 14}{res}{space 2} .0418553{col 26}{space 2} .0327235{col 37}{space 1}    1.28{col 46}{space 3}0.201{col 54}{space 4}-.0222999{col 67}{space 3} .1060105
+{txt}{space 7}_cons {c |}{col 14}{res}{space 2} 11.66658{col 26}{space 2} .6003414{col 37}{space 1}   19.43{col 46}{space 3}0.000{col 54}{space 4}  10.4896{col 67}{space 3} 12.84357
+{txt}{hline 13}{c BT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{res}{txt}
+{com}. eststo m_full
+{txt}
+{com}. 
+. * Exporting table 
+. esttab m_dim m_ancova m_full using "${c -(}output{c )-}table_treatment_effects.tex", ///
+>     replace booktabs ///
+>     se star(* 0.10 ** 0.05 *** 0.01) ///
+>     b(3) se(3) ///
+>     keep(treat_hh kessler_baseline age woman hh_size) ///
+>     label ///
+>     mtitles("Diff-in-means" "ANCOVA" "ANCOVA + controls") ///
+>     stats(N r2 control_mean, ///
+>           labels("Observations" "R-squared" "Control group mean") ///
+>           fmt(0 3 2)) ///
+>     title("Treatment Effects on Depression (Wave 2 Outcomes)") ///
+>     addnotes("Standard errors clustered at household level." ///
+>              "Dependent variable: Kessler-10 score (10–50)." ///
+>              "ANCOVA controls for individual baseline (Wave 1) Kessler score.")
+{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/table_treatment_effects.tex"'})
+
+{com}. 
+. restore
+{txt}
+{com}. 
+. 
+. /*──────────────────────────────────────────────────────────────────────────────
+>   3. DID THE EFFECT DIFFER BY GENDER?
+> ──────────────────────────────────────────────────────────────────────────────
+>   
+>   Specification (as prescribed in the instructions):
+>   
+>       Kessler_i2 = α + β₁·Woman_i + β₂·Treat_h + β₃·(Woman_i × Treat_h) + ε_ih
+>   
+>   Interpretation of coefficients:
+>   
+>       α   = Mean K10 for men in control households (reference group)
+>       β₁  = Gender gap: difference in K10 for women vs. men, within
+>              control households
+>       β₂  = Treatment effect for men
+>       β₃  = Differential treatment effect for women relative to men.
+>              The total treatment effect for women is β₂ + β₃.
+>   
+>   We use Wave 2 data only, with SEs clustered at the household level.
+> ──────────────────────────────────────────────────────────────────────────────*/
+. 
+. preserve
+{txt}
+{com}. keep if wave == 2 & !mi(kessler_score)
+{txt}(7,418 observations deleted)
+
+{com}. 
+. eststo clear
+{txt}
+{com}. 
+. * No additional controls
+. reg kessler_score woman treat_hh c.treat_hh#c.woman, vce(cluster hhid)
+
+{txt}Linear regression                               Number of obs     = {res}     6,382
+                                                {txt}F(3, 4347)        =  {res}    11.39
+                                                {txt}Prob > F          = {res}    0.0000
+                                                {txt}R-squared         = {res}    0.0050
+                                                {txt}Root MSE          =    {res} 5.4609
+
+{txt}{ralign 78:(Std. err. adjusted for {res:4,348} clusters in {res:hhid})}
+{hline 13}{c TT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{col 14}{c |}{col 26}    Robust
+{col 1}kessler_sc~e{col 14}{c |} Coefficient{col 26}  std. err.{col 38}      t{col 46}   P>|t|{col 54}     [95% con{col 67}f. interval]
+{hline 13}{c +}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{space 7}woman {c |}{col 14}{res}{space 2} .7956449{col 26}{space 2}  .167733{col 37}{space 1}    4.74{col 46}{space 3}0.000{col 54}{space 4} .4668028{col 67}{space 3} 1.124487
+{txt}{space 4}treat_hh {c |}{col 14}{res}{space 2}-.1318742{col 26}{space 2} .2056932{col 37}{space 1}   -0.64{col 46}{space 3}0.521{col 54}{space 4}-.5351378{col 67}{space 3} .2713894
+{txt}{space 12} {c |}
+{space 2}c.treat_hh#{c |}
+{space 5}c.woman {c |}{col 14}{res}{space 2}-.7059423{col 26}{space 2} .2348673{col 37}{space 1}   -3.01{col 46}{space 3}0.003{col 54}{space 4}-1.166402{col 67}{space 3}-.2454827
+{txt}{space 12} {c |}
+{space 7}_cons {c |}{col 14}{res}{space 2}  17.0634{col 26}{space 2} .1473655{col 37}{space 1}  115.79{col 46}{space 3}0.000{col 54}{space 4} 16.77449{col 67}{space 3} 17.35231
+{txt}{hline 13}{c BT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{res}{txt}
+{com}. eststo m_het
+{txt}
+{com}. 
+. * Computing and testing the total treatment effect for women
+. lincom treat_hh + c.treat_hh#c.woman
+
+{p 0 7}{space 1}{text:( 1)}{space 1} {res}treat_hh + c.treat_hh#c.woman = 0{p_end}
+
+{txt}{hline 13}{c TT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{col 1}kessler_sc~e{col 14}{c |} Coefficient{col 26}  Std. err.{col 38}      t{col 46}   P>|t|{col 54}     [95% con{col 67}f. interval]
+{hline 13}{c +}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{space 9}(1) {c |}{col 14}{res}{space 2}-.8378165{col 26}{space 2} .1864534{col 37}{space 1}   -4.49{col 46}{space 3}0.000{col 54}{space 4} -1.20336{col 67}{space 3}-.4722728
+{txt}{hline 13}{c BT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+
+{com}. /* This gives us the point estimate and CI for the female-specific
+>    treatment effect (β₂ + β₃). */
+. 
+. * Extended specification with baseline control 
+. reg kessler_score woman treat_hh c.treat_hh#c.woman kessler_baseline, ///
+>     vce(cluster hhid)
+
+{txt}Linear regression                               Number of obs     = {res}     6,140
+                                                {txt}F(4, 4214)        =  {res}    79.99
+                                                {txt}Prob > F          = {res}    0.0000
+                                                {txt}R-squared         = {res}    0.0648
+                                                {txt}Root MSE          =    {res} 5.2968
+
+{txt}{ralign 78:(Std. err. adjusted for {res:4,215} clusters in {res:hhid})}
+{hline 13}{c TT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{col 14}{c |}{col 26}    Robust
+{col 1}kessler_sc~e{col 14}{c |} Coefficient{col 26}  std. err.{col 38}      t{col 46}   P>|t|{col 54}     [95% con{col 67}f. interval]
+{hline 13}{c +}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{space 7}woman {c |}{col 14}{res}{space 2} .5939946{col 26}{space 2} .1696966{col 37}{space 1}    3.50{col 46}{space 3}0.000{col 54}{space 4} .2612999{col 67}{space 3} .9266893
+{txt}{space 4}treat_hh {c |}{col 14}{res}{space 2}-.1403143{col 26}{space 2} .2015376{col 37}{space 1}   -0.70{col 46}{space 3}0.486{col 54}{space 4}-.5354342{col 67}{space 3} .2548056
+{txt}{space 12} {c |}
+{space 2}c.treat_hh#{c |}
+{space 5}c.woman {c |}{col 14}{res}{space 2}-.6183988{col 26}{space 2}   .23417{col 37}{space 1}   -2.64{col 46}{space 3}0.008{col 54}{space 4}-1.077496{col 67}{space 3}-.1593021
+{txt}{space 12} {c |}
+kessler_ba~e {c |}{col 14}{res}{space 2} .2159612{col 26}{space 2}    .0128{col 37}{space 1}   16.87{col 46}{space 3}0.000{col 54}{space 4} .1908664{col 67}{space 3} .2410559
+{txt}{space 7}_cons {c |}{col 14}{res}{space 2} 12.84643{col 26}{space 2}  .273752{col 37}{space 1}   46.93{col 46}{space 3}0.000{col 54}{space 4} 12.30973{col 67}{space 3} 13.38313
+{txt}{hline 13}{c BT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{res}{txt}
+{com}. eststo m_het_ancova
+{txt}
+{com}. 
+. lincom treat_hh + c.treat_hh#c.woman
+
+{p 0 7}{space 1}{text:( 1)}{space 1} {res}treat_hh + c.treat_hh#c.woman = 0{p_end}
+
+{txt}{hline 13}{c TT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{col 1}kessler_sc~e{col 14}{c |} Coefficient{col 26}  Std. err.{col 38}      t{col 46}   P>|t|{col 54}     [95% con{col 67}f. interval]
+{hline 13}{c +}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+{space 9}(1) {c |}{col 14}{res}{space 2}-.7587131{col 26}{space 2} .1854243{col 37}{space 1}   -4.09{col 46}{space 3}0.000{col 54}{space 4}-1.122242{col 67}{space 3}-.3951838
+{txt}{hline 13}{c BT}{hline 11}{hline 11}{hline 9}{hline 8}{hline 13}{hline 12}
+
+{com}. 
+. * Exporting table 
+. esttab m_het m_het_ancova using "${c -(}output{c )-}table_gender_heterogeneity.tex", ///
+>     replace booktabs ///
+>     se star(* 0.10 ** 0.05 *** 0.01) ///
+>     b(3) se(3) ///
+>     order(woman treat_hh c.treat_hh#c.woman kessler_baseline) ///
+>     label ///
+>     mtitles("Prescribed spec." "With baseline control") ///
+>     stats(N r2, labels("Observations" "R-squared") fmt(0 3)) ///
+>     title("Gender Heterogeneity in Treatment Effects (Wave 2)") ///
+>     addnotes("Standard errors clustered at household level." ///
+>              "Dependent variable: Kessler-10 score (10–50)." ///
+>              "Reference group: men in control households." ///
+>              "Total treatment effect for women = Treat + Treat×Woman.")
+{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/table_gender_heterogeneity.tex"'})
+
+{com}. 
+. restore
+{txt}
+{com}. 
+{txt}end of do-file
+
+{com}. 
+. log close master
+      {txt}name:  {res}master
+       {txt}log:  {res}/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/master_log.smcl
+  {txt}log type:  {res}smcl
+ {txt}closed on:  {res} 8 Apr 2026, 18:50:57
+{txt}{.-}
+{smcl}
+{txt}{sf}{ul off}

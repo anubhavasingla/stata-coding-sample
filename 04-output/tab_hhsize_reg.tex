@@ -1,0 +1,23 @@
+\begin{table}[htbp]\centering
+\def\sym#1{\ifmmode^{#1}\else\(^{#1}\)\fi}
+\caption{Descriptive Regression: Depression on Household Size (Wave 1)}
+\begin{tabular}{l*{1}{c}}
+\toprule
+                    &\multicolumn{1}{c}{(1)}\\
+                    &\multicolumn{1}{c}{Kessler-10 score (sum of 10 items, 10–50)}\\
+\midrule
+Household size (count of Wave 1 roster members)&       0.226\sym{***}\\
+                    &     (0.036)         \\
+\addlinespace
+Constant            &      19.319\sym{***}\\
+                    &     (0.166)         \\
+\midrule
+Observations        &        7127         \\
+R-squared           &       0.009         \\
+\bottomrule
+\multicolumn{2}{l}{\footnotesize Standard errors in parentheses}\\
+\multicolumn{2}{l}{\footnotesize Standard errors clustered at household level.}\\
+\multicolumn{2}{l}{\footnotesize Dependent variable: Kessler-10 score (10--50).}\\
+\multicolumn{2}{l}{\footnotesize \sym{*} \(p<0.10\), \sym{**} \(p<0.05\), \sym{***} \(p<0.01\)}\\
+\end{tabular}
+\end{table}

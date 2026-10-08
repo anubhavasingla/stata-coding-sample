@@ -1,0 +1,34 @@
+\begin{table}[htbp]\centering
+\def\sym#1{\ifmmode^{#1}\else\(^{#1}\)\fi}
+\caption{Treatment Effects on Depression (Wave 2 Outcomes)}
+\begin{tabular}{l*{3}{c}}
+\toprule
+                    &\multicolumn{1}{c}{(1)}&\multicolumn{1}{c}{(2)}&\multicolumn{1}{c}{(3)}\\
+                    &\multicolumn{1}{c}{Diff-in-means}&\multicolumn{1}{c}{ANCOVA}&\multicolumn{1}{c}{ANCOVA + controls}\\
+\midrule
+Treatment household (=1)&      -0.531\sym{***}&      -0.490\sym{***}&      -0.481\sym{***}\\
+                    &     (0.157)         &     (0.154)         &     (0.152)         \\
+\addlinespace
+Baseline Kessler score (Wave 1)&                     &       0.218\sym{***}&       0.203\sym{***}\\
+                    &                     &     (0.013)         &     (0.014)         \\
+\addlinespace
+Age                 &                     &                     &       0.029\sym{**} \\
+                    &                     &                     &     (0.013)         \\
+\addlinespace
+Female (=1)         &                     &                     &       0.342\sym{***}\\
+                    &                     &                     &     (0.123)         \\
+\addlinespace
+Household size (count of Wave 1 roster members)&                     &                     &       0.042         \\
+                    &                     &                     &     (0.033)         \\
+\midrule
+Observations        &        6382         &        6140         &        6140         \\
+R-squared           &       0.002         &       0.063         &       0.076         \\
+Control group mean  &       17.51         &       17.57         &                     \\
+\bottomrule
+\multicolumn{4}{l}{\footnotesize Standard errors in parentheses}\\
+\multicolumn{4}{l}{\footnotesize Standard errors clustered at household level.}\\
+\multicolumn{4}{l}{\footnotesize Dependent variable: Kessler-10 score (10–50).}\\
+\multicolumn{4}{l}{\footnotesize ANCOVA controls for individual baseline (Wave 1) Kessler score.}\\
+\multicolumn{4}{l}{\footnotesize \sym{*} \(p<0.10\), \sym{**} \(p<0.05\), \sym{***} \(p<0.01\)}\\
+\end{tabular}
+\end{table}
