@@ -1,7 +1,7 @@
 {smcl}
 {com}{sf}{ul off}{txt}{.-}
       name:  {res}master
-       {txt}log:  {res}/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/master_log.smcl
+       {txt}log:  {res}/Users/anubhavasingla/Projects/stata-coding-sample/04-output/master_log.smcl
   {txt}log type:  {res}smcl
  {txt}opened on:  {res} 8 Apr 2026, 18:50:53
 {txt}
@@ -94,7 +94,7 @@
 . save "${c -(}tempdata{c )-}demographics_clean.dta", replace
 {txt}{p 0 4 2}
 file {bf}
-/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/03-tempdata/demographics_clean.dta{rm}
+/Users/anubhavasingla/Projects/stata-coding-sample/03-tempdata/demographics_clean.dta{rm}
 saved
 {p_end}
 
@@ -263,7 +263,7 @@ xij variables:
 . save "${c -(}tempdata{c )-}assets_hh_wave.dta", replace
 {txt}{p 0 4 2}
 file {bf}
-/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/03-tempdata/assets_hh_wave.dta{rm}
+/Users/anubhavasingla/Projects/stata-coding-sample/03-tempdata/assets_hh_wave.dta{rm}
 saved
 {p_end}
 
@@ -629,14 +629,14 @@ column labels saved in macro e(eqlabels)
 
 {com}. esttab using "${c -(}output{c )-}table_kessler_by_wave.csv", ///
 >     cell(colpct(fmt(1))) unstack noobs replace
-{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/table_kessler_by_wave.csv"'})
+{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/stata-coding-sample/04-output/table_kessler_by_wave.csv"'})
 
 {com}. 
 . 
 . save "${c -(}tempdata{c )-}depression_clean.dta", replace
 {txt}{p 0 4 2}
 file {bf}
-/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/03-tempdata/depression_clean.dta{rm}
+/Users/anubhavasingla/Projects/stata-coding-sample/03-tempdata/depression_clean.dta{rm}
 saved
 {p_end}
 
@@ -827,7 +827,7 @@ Treatment household {c |}    wave
 {com}. save "${c -(}tempdata{c )-}analysis.dta", replace
 {txt}{p 0 4 2}
 file {bf}
-/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/03-tempdata/analysis.dta{rm}
+/Users/anubhavasingla/Projects/stata-coding-sample/03-tempdata/analysis.dta{rm}
 saved
 {p_end}
 
@@ -913,7 +913,7 @@ saved
 >     cells("count(fmt(0)) mean(fmt(2)) sd(fmt(2))") ///
 >     noobs replace booktabs ///
 >     title("Baseline Depression by Household Wealth Quartile")
-{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/tab_wealth_quartiles.tex"'})
+{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/stata-coding-sample/04-output/tab_wealth_quartiles.tex"'})
 
 {com}. 
 . * Figure 1: Binned scatter — K10 on log(assets)
@@ -940,7 +940,7 @@ saved
 .     graph export "${c -(}output{c )-}fig_wealth_depression.png", width(1800) replace
 {txt}{p 0 4 2}
 file {bf}
-/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/fig_wealth_depression.png{rm}
+/Users/anubhavasingla/Projects/stata-coding-sample/04-output/fig_wealth_depression.png{rm}
 saved as
 PNG
 format
@@ -1009,7 +1009,7 @@ format
 >     title("Descriptive Regression: Depression on Household Wealth (Wave 1)") ///
 >     addnotes("Standard errors clustered at household level." ///
 >              "Dependent variable: Kessler-10 score (10--50).")
-{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/tab_wealth_reg.tex"'})
+{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/stata-coding-sample/04-output/tab_wealth_reg.tex"'})
 
 {com}. 
 . 
@@ -1044,7 +1044,7 @@ format
 >     noobs replace booktabs ///
 >     title("Baseline Depression by Gender")
 {txt}(tabulating estimates stored by eststo; specify "." to tabulate the active results)
-{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/tab_gender_summary.tex"'})
+{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/stata-coding-sample/04-output/tab_gender_summary.tex"'})
 
 {com}. 
 . * Figure 2: Overlapping kernel densities by gender
@@ -1062,7 +1062,7 @@ format
 . graph export "${c -(}output{c )-}fig_gender_density.png", width(1800) replace
 {txt}{p 0 4 2}
 file {bf}
-/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/fig_gender_density.png{rm}
+/Users/anubhavasingla/Projects/stata-coding-sample/04-output/fig_gender_density.png{rm}
 saved as
 PNG
 format
@@ -1098,7 +1098,7 @@ format
 .     graph export "${c -(}output{c )-}fig_hhsize_depression.png", width(1800) replace
 {txt}{p 0 4 2}
 file {bf}
-/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/fig_hhsize_depression.png{rm}
+/Users/anubhavasingla/Projects/stata-coding-sample/04-output/fig_hhsize_depression.png{rm}
 saved as
 PNG
 format
@@ -1140,7 +1140,7 @@ format
 >     title("Descriptive Regression: Depression on Household Size (Wave 1)") ///
 >     addnotes("Standard errors clustered at household level." ///
 >              "Dependent variable: Kessler-10 score (10--50).")
-{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/tab_hhsize_reg.tex"'})
+{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/stata-coding-sample/04-output/tab_hhsize_reg.tex"'})
 
 {com}. 
 {txt}end of do-file
@@ -1392,7 +1392,7 @@ Linear regression                               Number of obs     = {res}     7,
 >     addnotes("Standard errors clustered at household level." ///
 >              "Dependent variable: Kessler-10 score (10–50)." ///
 >              "ANCOVA controls for individual baseline (Wave 1) Kessler score.")
-{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/table_treatment_effects.tex"'})
+{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/stata-coding-sample/04-output/table_treatment_effects.tex"'})
 
 {com}. 
 . restore
@@ -1521,7 +1521,7 @@ kessler_ba~e {c |}{col 14}{res}{space 2} .2159612{col 26}{space 2}    .0128{col 
 >              "Dependent variable: Kessler-10 score (10–50)." ///
 >              "Reference group: men in control households." ///
 >              "Total treatment effect for women = Treat + Treat×Woman.")
-{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/table_gender_heterogeneity.tex"'})
+{res}{txt}(output written to {browse  `"/Users/anubhavasingla/Projects/stata-coding-sample/04-output/table_gender_heterogeneity.tex"'})
 
 {com}. 
 . restore
@@ -1532,7 +1532,7 @@ kessler_ba~e {c |}{col 14}{res}{space 2} .2159612{col 26}{space 2}    .0128{col 
 {com}. 
 . log close master
       {txt}name:  {res}master
-       {txt}log:  {res}/Users/anubhavasingla/Projects/GPRL_Coding_Sample_2/04-output/master_log.smcl
+       {txt}log:  {res}/Users/anubhavasingla/Projects/stata-coding-sample/04-output/master_log.smcl
   {txt}log type:  {res}smcl
  {txt}closed on:  {res} 8 Apr 2026, 18:50:57
 {txt}{.-}
