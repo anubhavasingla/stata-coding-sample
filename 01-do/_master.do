@@ -29,7 +29,7 @@ version 17                   // pin Stata version for reproducibility
 * ── Root path (EDIT THIS) ─────────────────────────────────────────────────────
 * Detect user and set path automatically; add your own block.
 if (lower("`c(username)'") == "yourname") {
-    global root "/Users/yourname/Projects/JPAL_GPRL/"
+    global root "/Users/yourname/Projects/stata-coding-sample/"
 }
 else {
     * Fallback — edit before running
